@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt
 import os, sys, math
 
-sys.path.append('/data2/2shared/xiaoyujie/冠脉造影/code')
+sys.path.append('./code')
 from ECGdataset import ECGDataset
 from net1d import Net1D
 
@@ -35,7 +35,6 @@ def pcgrad_step(model, task_losses, optimizer):
         grads = [p.grad.detach().clone() if p.grad is not None else torch.zeros_like(p) for p in params]
         per_task_grads.append(grads)
 
-    # 逐对投影
     for i in range(len(per_task_grads)):
         for j in range(i + 1, len(per_task_grads)):
             dot = torch.tensor(0., device=params[0].device)
@@ -90,12 +89,11 @@ def my_roc_curve(df, model_path):
     ]
     CLASS_NAMES = ['RCA', 'LM', 'LAD', 'LCx']
 
-    # 👇 统一认为是 0 的情况
     NEG_STR_SET = {"轻度狭窄", "中度狭窄", "未见明显狭窄"}
 
     def binarize(x):
         if pd.isna(x):
-            return 0  # 可改成 1，取决于你的策略
+            return 0  
         x = str(x).strip()
         return 0 if x in NEG_STR_SET else 1
 
@@ -109,9 +107,7 @@ def my_roc_curve(df, model_path):
         y = temp[LABELS[i]].apply(binarize)
         s = temp[PROBS[i]]
 
-        # 如果只有一个类别，跳过（无法画 ROC）
         if len(np.unique(y)) < 2:
-            print(f"⚠️ {CLASS_NAMES[i]} 只有单一标签，跳过 ROC 绘制")
             continue
 
         fpr, tpr, _ = roc_curve(y, s)
@@ -133,13 +129,12 @@ def my_roc_curve(df, model_path):
     plt.savefig(save_path, dpi=300)
     plt.close()
 
-    print(f"✅ ROC 曲线已保存至: {save_path}")
 
 
 
 def run_fold_training(train_df, test_df, fold_num, config):
     device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
-    print(f"--- Fold {fold_num + 1} 使用设备: {device} ---")
+    print(f"--- Fold {fold_num + 1} ---")
 
     fold_name = f'fold_{fold_num + 1}'
     MODEL_PATH_FOLD = os.path.join(config['MODEL_PATH'], fold_name)
@@ -156,7 +151,6 @@ def run_fold_training(train_df, test_df, fold_num, config):
     test_loader = DataLoader(test_dataset, batch_size=config['BATCH_SIZE'], shuffle=False,
                              num_workers=2, pin_memory=True)
 
-    # Model
     model = Net1D(
         in_channels=12, base_filters=64, ratio=1,
         filter_list=[64,160,160,400,400,1024,1024],
@@ -179,12 +173,10 @@ def run_fold_training(train_df, test_df, fold_num, config):
     scheduler = build_warmup_cosine_scheduler(optimizer, int(0.1 * total_steps), total_steps)
     best_macro_auc = 0.0
 
-    # DDP 移除: if rank == 0:
     writer = SummaryWriter(LOG_DIR_FOLD)
 
     for epoch in range(config['EPOCHS']):
-        # DDP 移除: train_sampler.set_epoch(epoch)
-        train_dataset.set_epoch(epoch) # ECGDataset 里的 set_epoch 保持
+        train_dataset.set_epoch(epoch) 
         model.train()
         uw.train()
         running_loss = 0.0
@@ -212,11 +204,10 @@ def run_fold_training(train_df, test_df, fold_num, config):
             running_loss += task_losses.mean().item()
 
         epoch_loss = running_loss / len(train_loader)
-        # DDP 移除: if rank == 0:
+        
         writer.add_scalar("Loss/train", epoch_loss, epoch)
         print(f"[Fold {fold_num+1}][Epoch {epoch+1}] TrainLoss={epoch_loss:.4f} | log_vars={uw.log_vars.data.cpu().numpy()}")
 
-        # ================= 验证 =================
         model.eval(); uw.eval()
         val_loss = 0.0
         all_labels, all_probs = [], []
@@ -284,10 +275,7 @@ def run_fold_training(train_df, test_df, fold_num, config):
     print(f"Fold {fold_num+1} 完成训练。最佳 MacroAUC={best_macro_auc:.4f}")
 
 
-# ==========================================================
-# 主入口：K-fold (单机)
-# ==========================================================
-def run_kfold_pipeline(config): # DDP 移除: world_size
+def run_kfold_pipeline(config): 
     torch.manual_seed(config['RANDOM_SEED'])
     np.random.seed(config['RANDOM_SEED'])
 
@@ -310,48 +298,40 @@ def run_kfold_pipeline(config): # DDP 移除: world_size
     groups = full_df[config['ID_COLUMN_NAME']]
     sgkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=config['RANDOM_SEED'])
 
-    # DDP 移除: rank, world_size (os.environ)
 
-    oof_predictions = [] # 用于收集所有折的验证集预测
+    oof_predictions = [] 
 
     for fold_num, (train_idx, test_idx) in enumerate(sgkf.split(full_df, y_stratify, groups)):
         train_df = full_df.iloc[train_idx].reset_index(drop=True)
         test_df  = full_df.iloc[test_idx].reset_index(drop=True)
         
-        # DDP 移除: rank, world_size
         run_fold_training(train_df, test_df, fold_num, config)
         
-        # (可选) 收集每折的预测结果用于后续分析
         fold_name = f'fold_{fold_num + 1}'
         fold_csv_path = os.path.join(config['MODEL_PATH'], fold_name, f'predictions_{fold_name}_best.csv')
         if os.path.exists(fold_csv_path):
              oof_predictions.append(pd.read_csv(fold_csv_path))
 
     if oof_predictions:
-        print("所有折训练完成。汇总OOF预测...")
         oof_df = pd.concat(oof_predictions).sort_index()
         oof_df.to_csv(os.path.join(config['MODEL_PATH'], 'oof_predictions_all_folds.csv'), index=False, encoding='utf_8_sig')
-        # 使用汇总的 OOF 结果绘制总的 ROC 曲线
         my_roc_curve(oof_df, config['MODEL_PATH'])
-        print(f"OOF ROC 曲线已保存到: {config['MODEL_PATH']}")
 
 
 if __name__ == "__main__":
-    # DDP 移除: world_size
     my_config = {
-        'CSV_PATH': '/data2/2shared/xiaoyujie/冠脉造影/gz_data_cleaned_match_ecg_时间约束_所有成功匹配的ecg_去重后.csv',
+        'CSV_PATH': './gz_data_cleaned_match_ecg_时间约束_所有成功匹配的ecg_去重后.csv',
         'ID_COLUMN_NAME': '患者编号',
-        'BATCH_SIZE': 64, # 如果显存不足，你可能需要调小这个值
+        'BATCH_SIZE': 64, 
         'EPOCHS': 100,
         'LEARNING_RATE': 3e-5,
         'RANDOM_SEED': 42,
-        'MODEL_PATH': '/data2/2shared/xiaoyujie/冠脉造影/人民5折交叉验证/checkpoint_5fold_轻中度正常', # 建议换个新路径
-        'TENSORBOARD_LOG_DIR': '/data2/2shared/xiaoyujie/冠脉造影/人民5折交叉验证/logs_5fold_v3_轻中度正常', # 建议换个新路径
-        'PRETRAINED_MODEL_PATH': '/data2/2shared/jiangzirui/SeriesECG/static_optimize/model_checkpoint/1m-epoch15.pth',
+        'MODEL_PATH': './人民5折交叉验证/checkpoint_5fold_轻中度正常', 
+        'TENSORBOARD_LOG_DIR': './人民5折交叉验证/logs_5fold_v3_轻中度正常', 
+        'PRETRAINED_MODEL_PATH': './1m-epoch15.pth',
     }
     
-    # 确保新路径存在
     os.makedirs(my_config['MODEL_PATH'], exist_ok=True)
     os.makedirs(my_config['TENSORBOARD_LOG_DIR'], exist_ok=True)
 
-    run_kfold_pipeline(my_config) # DDP 移除: world_size
+    run_kfold_pipeline(my_config)
