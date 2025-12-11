@@ -91,8 +91,6 @@ project_root/
 ├── Utils/
 │   ├── net1d.py              # Model network
 │   ├── ECGDataset.py         # Dataset
-│   ├── metrics.py            # AUC and evaluation metrics
-│   └── visualization.py      # ECG visualization tools
 └── outputs/
     ├── checkpoints/          # Saved models
     ├── logs/                 # Training logs
