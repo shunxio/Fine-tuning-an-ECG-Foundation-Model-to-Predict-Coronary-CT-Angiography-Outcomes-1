@@ -9,6 +9,7 @@ from sklearn.metrics import roc_auc_score, roc_curve, auc
 from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt
 import os, sys, math
+sys.path.append('./Utils/')
 
 from ECGdataset import ECGDataset
 from net1d import Net1D
@@ -319,14 +320,14 @@ def run_kfold_pipeline(config):
 
 if __name__ == "__main__":
     my_config = {
-        'CSV_PATH': './gz_data_cleaned_match_ecg_时间约束_所有成功匹配的ecg_去重后.csv',
+        'CSV_PATH': './data/sample.csv',
         'ID_COLUMN_NAME': '患者编号',
         'BATCH_SIZE': 64, 
         'EPOCHS': 100,
         'LEARNING_RATE': 3e-5,
         'RANDOM_SEED': 42,
-        'MODEL_PATH': './人民5折交叉验证/checkpoint_5fold_轻中度正常', 
-        'TENSORBOARD_LOG_DIR': './人民5折交叉验证/logs_5fold_v3_轻中度正常', 
+        'MODEL_PATH': './checkpoint', 
+        'TENSORBOARD_LOG_DIR': './logs', 
         'PRETRAINED_MODEL_PATH': './1m-epoch15.pth',
     }
     
