@@ -12,7 +12,6 @@
 * [Running the Project](#running-the-project)
 * [Training Example](#training-example)
 * [Citation](#citation)
-* [License](#license)
 
 ---
 
@@ -88,17 +87,10 @@ project_root/
 ├── requirements.txt          # Dependencies
 ├── README.md                 # Documentation
 ├── data/
-│   ├── ecg/                  # Raw ECG signals
-│   ├── labels/               # CCTA labels
-│   └── processed/            # Preprocessed data
-├── models/
-│   ├── ecgfounder.py         # Foundation model loader
-│   ├── net1d.py              # Net1D architecture
-│   ├── multitask_model.py    # Multi-task classifier
-│   └── utils.py              # Model utilities
-├── utils/
-│   ├── preprocessing.py      # Normalization, filtering
-│   ├── dataset.py            # Dataset & dataloader
+│   ├── sample.csv/           # The input model files are listed, with the ECG file path column indicating the corresponding .npy files. ECG data should be 500Hz and 10 seconds in length.
+├── Utils/
+│   ├── net1d.py              # Model network
+│   ├── ECGDataset.py         # Dataset
 │   ├── metrics.py            # AUC and evaluation metrics
 │   └── visualization.py      # ECG visualization tools
 └── outputs/
@@ -116,9 +108,7 @@ ECG Signals
     ↓
 Preprocessing (Z-score, filtering)
     ↓
-ECGFounder Backbone
-    ↓
-Net1D Multi-Task Classifier
+ECGFounder
     ↓
 Risk Prediction
     ↓
@@ -131,16 +121,9 @@ Interpretability (waveform analysis)
 
 ### ECG Data (.npy)
 
-* Shape: `(T, 12)`
-* T: time steps
+* Shape: `(12, T)`
+* T: time steps, should be 5000 (500Hz * 10s)
 * 12: ECG leads
-
-### Label File (.csv)
-
-```
-patient_id, RCA_label, LM_label, LAD_label, LCX_label
-0001, 1, 0, 0, 1
-```
 
 ---
 
@@ -163,20 +146,6 @@ pip install -r requirements.txt
 ```bash
 python train.py
 ```
-
----
-
-## Training Example
-
-```bash
-python train.py \
-    --batch_size 64 \
-    --lr 1e-4 \
-    --epochs 50 \
-    --save_dir ./outputs/checkpoints
-```
-
----
 
 ## Citation
 
